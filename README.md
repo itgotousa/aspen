@@ -1,2 +1,2 @@
-# aspen
-Tiny text and hex editor
+# apsen
+A tiny hex editor
