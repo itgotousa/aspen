@@ -13,7 +13,14 @@
 #include "aboutdlg.h"
 #include "MainFrm.h"
 
+#include "DuiWnd.h"
+
+using namespace DuiLib;
+
 CAppModule _Module;
+
+
+
 
 class CAspenThreadManager
 {
@@ -140,10 +147,15 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPTSTR lp
 
 	int nRet = 0;
 	// BLOCK: Run application
+#if 0
 	{
 		CAspenThreadManager mgr;
 		nRet = mgr.Run(lpstrCmdLine, nCmdShow);
 	}
+#endif
+
+	CPaintManagerUI::SetInstance(hInstance);
+	//CDUIWnd
 
 	_Module.Term();
 	::CoUninitialize();
