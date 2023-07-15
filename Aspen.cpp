@@ -15,7 +15,7 @@
 
 #include "DuiWnd.h"
 
-using namespace DuiLib;
+using namespace DUI;
 
 CAppModule _Module;
 
@@ -154,7 +154,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPTSTR lp
 	}
 #endif
 
-	CPaintManagerUI::SetInstance(hInstance);
+	//CPaintManagerUI::SetInstance(hInstance);
 	//CDUIWnd
 
 	_Module.Term();
