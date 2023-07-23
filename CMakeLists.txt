@@ -1,10 +1,16 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(Aspen)
+project(aspen)
 
 add_definitions(-D_UNICODE -DUNICODE)
 
-add_executable(${PROJECT_NAME} WIN32 Aspen.cpp stdafx.cpp Aspen.rc)
-target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/wtl ${PROJECT_SOURCE_DIR}/dui)
+file(GLOB DUI_SRC "${PROJECT_SOURCE_DIR}/dui/*.cpp" "${PROJECT_SOURCE_DIR}/dui/*.c")
+file(GLOB ASPEN_SRC "*.cpp" "*.c" "*.rc")
+
+add_executable(${PROJECT_NAME} WIN32 ${ASPEN_SRC} ${DUI_SRC})
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/wtl)
+
+
 
 
