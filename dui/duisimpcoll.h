@@ -1,9 +1,280 @@
 #ifndef __DUISIMPCOLL_H__
 #define __DUISIMPCOLL_H__
 
+#include "duidef.h"
 
 namespace DUI
 {
+	/////////////////////////////////////////////////////////////////////////////
+	// Collection helpers - DSimpleArray & DSimpleMap
+
+	DUIPREFAST_SUPPRESS(6319)
+	// template class helpers with functions for comparing elements
+	// override if using complex types without operator==
+	template <class T>
+	class DSimpleArrayEqualHelper
+	{
+	public:
+		static bool IsEqual(
+			_In_ const T& t1,
+			_In_ const T& t2)
+		{
+			return (t1 == t2);
+		}
+	};
+	DUIPREFAST_UNSUPPRESS()
+
+	template <class T>
+	class DSimpleArrayEqualHelperFalse
+	{
+	public:
+		static bool IsEqual(
+			_In_ const T&,
+			_In_ const T&)
+		{
+			DUIASSERT(false);
+			return false;
+		}
+	};
+
+	template <class TKey, class TVal>
+	class DSimpleMapEqualHelper
+	{
+	public:
+		static bool IsEqualKey(
+			_In_ const TKey& k1,
+			_In_ const TKey& k2)
+		{
+			return DSimpleArrayEqualHelper<TKey>::IsEqual(k1, k2);
+		}
+
+		static bool IsEqualValue(
+			_In_ const TVal& v1,
+			_In_ const TVal& v2)
+		{
+			return DSimpleArrayEqualHelper<TVal>::IsEqual(v1, v2);
+		}
+	};
+
+	template <class TKey, class TVal>
+	class DSimpleMapEqualHelperFalse
+	{
+	public:
+		static bool IsEqualKey(
+			_In_ const TKey& k1,
+			_In_ const TKey& k2)
+		{
+			return DSimpleArrayEqualHelper<TKey>::IsEqual(k1, k2);
+		}
+
+		static bool IsEqualValue(
+			_In_ const TVal&,
+			_In_ const TVal&)
+		{
+			DUIASSERT(FALSE);
+			return false;
+		}
+	};
+
+	template <class T, class TEqual = DSimpleArrayEqualHelper< T > >
+	class DSimpleArray
+	{
+	public:
+		// Construction/destruction
+		DSimpleArray() :
+			m_aT(NULL), m_nSize(0), m_nAllocSize(0)
+		{
+		}
+
+		~DSimpleArray();
+
+		DSimpleArray(_In_ const DSimpleArray< T, TEqual >& src) :
+			m_aT(NULL), m_nSize(0), m_nAllocSize(0)
+		{
+			if (src.GetSize())
+			{
+				m_aT = (T*)calloc(src.GetSize(), sizeof(T));
+				if (m_aT != NULL)
+				{
+					m_nAllocSize = src.GetSize();
+					for (int i = 0; i < src.GetSize(); i++)
+						Add(src[i]);
+				}
+			}
+		}
+		DSimpleArray< T, TEqual >& operator=(_In_ const DSimpleArray< T, TEqual >& src)
+		{
+			if (GetSize() != src.GetSize())
+			{
+				RemoveAll();
+				m_aT = (T*)calloc(src.GetSize(), sizeof(T));
+				if (m_aT != NULL)
+					m_nAllocSize = src.GetSize();
+			}
+			else
+			{
+				for (int i = GetSize(); i > 0; i--)
+					RemoveAt(i - 1);
+			}
+			for (int i = 0; i < src.GetSize(); i++)
+				Add(src[i]);
+			return *this;
+		}
+
+		// Operations
+		int GetSize() const
+		{
+			return m_nSize;
+		}
+
+		_Success_(return != FALSE)
+			BOOL Add(_In_ const T& t)
+		{
+			if (m_nSize == m_nAllocSize)
+			{
+				// Make sure newElement is not a reference to an element in the array.
+				// Or else, it will be invalidated by the reallocation.
+				DUIENSURE((&t < m_aT) ||
+					(&t >= (m_aT + m_nAllocSize)));
+
+				T* aT;
+				int nNewAllocSize = (m_nAllocSize == 0) ? 1 : (m_nSize * 2);
+
+				if (nNewAllocSize<0 || nNewAllocSize>INT_MAX / sizeof(T))
+				{
+					return FALSE;
+				}
+
+				aT = (T*)_recalloc(m_aT, nNewAllocSize, sizeof(T));
+				if (aT == NULL)
+					return FALSE;
+				m_nAllocSize = nNewAllocSize;
+				m_aT = aT;
+			}
+			InternalSetAtIndex(m_nSize, t);
+			m_nSize++;
+			return TRUE;
+		}
+
+		_Success_(return != FALSE)
+			BOOL Remove(_In_ const T& t)
+		{
+			int nIndex = Find(t);
+			if (nIndex == -1)
+				return FALSE;
+			return RemoveAt(nIndex);
+		}
+
+		_Success_(return != FALSE)
+			BOOL RemoveAt(_In_ int nIndex)
+		{
+			DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
+			if (nIndex < 0 || nIndex >= m_nSize)
+				return FALSE;
+			m_aT[nIndex].~T();
+			if (nIndex != (m_nSize - 1))
+				Checked::memmove_s((void*)(m_aT + nIndex), (m_nSize - nIndex) * sizeof(T), (void*)(m_aT + nIndex + 1), (m_nSize - (nIndex + 1)) * sizeof(T));
+			m_nSize--;
+			return TRUE;
+		}
+		void RemoveAll()
+		{
+			if (m_aT != NULL)
+			{
+				for (int i = 0; i < m_nSize; i++)
+					m_aT[i].~T();
+				free(m_aT);
+				m_aT = NULL;
+			}
+			m_nSize = 0;
+			m_nAllocSize = 0;
+		}
+		const T& operator[] (_In_ int nIndex) const
+		{
+			DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
+			if (nIndex < 0 || nIndex >= m_nSize)
+			{
+				AtlThrow(E_BOUNDS);
+			}
+			return m_aT[nIndex];
+		}
+		T& operator[] (_In_ int nIndex)
+		{
+			DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
+			if (nIndex < 0 || nIndex >= m_nSize)
+			{
+				AtlThrow(E_BOUNDS);
+			}
+			return m_aT[nIndex];
+		}
+		T* GetData() const
+		{
+			return m_aT;
+		}
+
+		int Find(_In_ const T& t) const
+		{
+			for (int i = 0; i < m_nSize; i++)
+			{
+				if (TEqual::IsEqual(m_aT[i], t))
+					return i;
+			}
+			return -1;  // not found
+		}
+
+		_Success_(return != FALSE)
+			BOOL SetAtIndex(
+				_In_ int nIndex,
+				_In_ const T& t)
+		{
+			if (nIndex < 0 || nIndex >= m_nSize)
+				return FALSE;
+			InternalSetAtIndex(nIndex, t);
+			return TRUE;
+		}
+
+		// Implementation
+		class Wrapper
+		{
+		public:
+			Wrapper(_In_ const T& _t) : t(_t)
+			{
+			}
+			template <class _Ty>
+			void* __cdecl operator new(
+				_In_ size_t,
+				_In_ _Ty* p)
+			{
+				return p;
+			}
+			template <class _Ty>
+			void __cdecl operator delete(
+				_In_ void* /* pv */,
+				_In_ _Ty* /* p */)
+			{
+			}
+			T t;
+		};
+
+		// Implementation
+		void InternalSetAtIndex(
+			_In_ int nIndex,
+			_In_ const T& t)
+		{
+			new(m_aT + nIndex) Wrapper(t);
+		}
+
+		typedef T _ArrayElementType;
+		T* m_aT;
+		int m_nSize;
+		int m_nAllocSize;
+	};
+
+#define DSimpleValArray DSimpleArray
+	template <class T, class TEqual> inline DSimpleArray<T, TEqual>::~DSimpleArray()
+	{
+		RemoveAll();
+	}
 
 }
 #endif /* __DUISIMPCOLL_H__ */
@@ -54,13 +325,13 @@ namespace ATL
 #undef new
 
 /////////////////////////////////////////////////////////////////////////////
-// Collection helpers - CSimpleArray & CSimpleMap
+// Collection helpers - DSimpleArray & DSimpleMap
 
 ATLPREFAST_SUPPRESS(6319)
 // template class helpers with functions for comparing elements
 // override if using complex types without operator==
 template <class T>
-class CSimpleArrayEqualHelper
+class DSimpleArrayEqualHelper
 {
 public:
 	static bool IsEqual(
@@ -73,70 +344,70 @@ public:
 ATLPREFAST_UNSUPPRESS()
 
 template <class T>
-class CSimpleArrayEqualHelperFalse
+class DSimpleArrayEqualHelperFalse
 {
 public:
 	static bool IsEqual(
 		_In_ const T&,
 		_In_ const T&)
 	{
-		ATLASSERT(false);
+		DUIASSERT(false);
 		return false;
 	}
 };
 
 template <class TKey, class TVal>
-class CSimpleMapEqualHelper
+class DSimpleMapEqualHelper
 {
 public:
 	static bool IsEqualKey(
 		_In_ const TKey& k1,
 		_In_ const TKey& k2)
 	{
-		return CSimpleArrayEqualHelper<TKey>::IsEqual(k1, k2);
+		return DSimpleArrayEqualHelper<TKey>::IsEqual(k1, k2);
 	}
 
 	static bool IsEqualValue(
 		_In_ const TVal& v1,
 		_In_ const TVal& v2)
 	{
-		return CSimpleArrayEqualHelper<TVal>::IsEqual(v1, v2);
+		return DSimpleArrayEqualHelper<TVal>::IsEqual(v1, v2);
 	}
 };
 
 template <class TKey, class TVal>
-class CSimpleMapEqualHelperFalse
+class DSimpleMapEqualHelperFalse
 {
 public:
 	static bool IsEqualKey(
 		_In_ const TKey& k1,
 		_In_ const TKey& k2)
 	{
-		return CSimpleArrayEqualHelper<TKey>::IsEqual(k1, k2);
+		return DSimpleArrayEqualHelper<TKey>::IsEqual(k1, k2);
 	}
 
 	static bool IsEqualValue(
 		_In_ const TVal&,
 		_In_ const TVal&)
 	{
-		ATLASSERT(FALSE);
+		DUIASSERT(FALSE);
 		return false;
 	}
 };
 
-template <class T, class TEqual = CSimpleArrayEqualHelper< T > >
-class CSimpleArray
+template <class T, class TEqual = DSimpleArrayEqualHelper< T > >
+class DSimpleArray
 {
 public:
 // Construction/destruction
-	CSimpleArray() :
+	DSimpleArray() :
 		m_aT(NULL), m_nSize(0), m_nAllocSize(0)
 	{
 	}
 
-	~CSimpleArray();
+	~DSimpleArray();
 
-	CSimpleArray(_In_ const CSimpleArray< T, TEqual >& src) :
+	DSimpleArray(_In_ const DSimpleArray< T, TEqual >& src) :
 		m_aT(NULL), m_nSize(0), m_nAllocSize(0)
 	{
         if (src.GetSize())
@@ -150,7 +421,7 @@ public:
 			}
 		}
 	}
-	CSimpleArray< T, TEqual >& operator=(_In_ const CSimpleArray< T, TEqual >& src)
+	DSimpleArray< T, TEqual >& operator=(_In_ const DSimpleArray< T, TEqual >& src)
 	{
 		if (GetSize() != src.GetSize())
 		{
@@ -182,7 +453,7 @@ public:
 		{
 			// Make sure newElement is not a reference to an element in the array.
 			// Or else, it will be invalidated by the reallocation.
-			ATLENSURE(	(&t < m_aT) ||
+			DUIENSURE(	(&t < m_aT) ||
 						(&t >= (m_aT + m_nAllocSize) ) );
 
 			T* aT;
@@ -216,7 +487,7 @@ public:
 	_Success_(return != FALSE)
 	BOOL RemoveAt(_In_ int nIndex)
 	{
-		ATLASSERT(nIndex >= 0 && nIndex < m_nSize);
+		DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
 		if (nIndex < 0 || nIndex >= m_nSize)
 			return FALSE;
 		m_aT[nIndex].~T();
@@ -239,7 +510,7 @@ public:
     }
 	const T& operator[] (_In_ int nIndex) const
 	{
-		ATLASSERT(nIndex >= 0 && nIndex < m_nSize);
+		DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
 		if(nIndex < 0 || nIndex >= m_nSize)
 		{
 			AtlThrow(E_BOUNDS);
@@ -248,7 +519,7 @@ public:
 	}
 	T& operator[] (_In_ int nIndex)
 	{
-		ATLASSERT(nIndex >= 0 && nIndex < m_nSize);
+		DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
 		if(nIndex < 0 || nIndex >= m_nSize)
 		{
 			AtlThrow(E_BOUNDS);
@@ -318,16 +589,16 @@ public:
 	int m_nAllocSize;
 };
 
-#define CSimpleValArray CSimpleArray
+#define DSimpleValArray DSimpleArray
 
-template <class T, class TEqual> inline CSimpleArray<T, TEqual>::~CSimpleArray()
+template <class T, class TEqual> inline DSimpleArray<T, TEqual>::~DSimpleArray()
 {
 	RemoveAll();
 }
 
 // intended for small number of simple types or pointers
-template <class TKey, class TVal, class TEqual = CSimpleMapEqualHelper< TKey, TVal > >
-class CSimpleMap
+template <class TKey, class TVal, class TEqual = DSimpleMapEqualHelper< TKey, TVal > >
+class DSimpleMap
 {
 public:
 	TKey* m_aKey;
@@ -338,12 +609,12 @@ public:
 	typedef TVal _ArrayElementType;
 
 // Construction/destruction
-	CSimpleMap() :
+	DSimpleMap() :
 		m_aKey(NULL), m_aVal(NULL), m_nSize(0)
 	{
 	}
 
-	~CSimpleMap()
+	~DSimpleMap()
 	{
 		RemoveAll();
 	}
@@ -380,7 +651,7 @@ public:
 	}
 	BOOL RemoveAt(_In_ int nIndex)
 	{
-		ATLASSERT(nIndex >= 0 && nIndex < m_nSize);
+		DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
 		if (nIndex < 0 || nIndex >= m_nSize)
 			return FALSE;
 		m_aKey[nIndex].~TKey();
@@ -428,7 +699,7 @@ public:
 		int nIndex = FindKey(key);
 		if(nIndex == -1)
 			return FALSE;
-		ATLASSERT(nIndex >= 0 && nIndex < m_nSize);
+		DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
 		m_aKey[nIndex].~TKey();
 		m_aVal[nIndex].~TVal();
 		InternalSetAtIndex(nIndex, key, val);
@@ -450,7 +721,7 @@ public:
 	}
 	TKey& GetKeyAt(_In_ int nIndex) const
 	{
-		ATLASSERT(nIndex >= 0 && nIndex < m_nSize);
+		DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
 		if(nIndex < 0 || nIndex >= m_nSize)
 			AtlThrow(E_BOUNDS);
 
@@ -458,7 +729,7 @@ public:
 	}
 	TVal& GetValueAt(_In_ int nIndex) const
 	{
-		ATLASSERT(nIndex >= 0 && nIndex < m_nSize);
+		DUIASSERT(nIndex >= 0 && nIndex < m_nSize);
 		if(nIndex < 0 || nIndex >= m_nSize)
 			AtlThrow(E_BOUNDS);
 

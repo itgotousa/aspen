@@ -1,11 +1,30 @@
 #ifndef __DUIWINVERAPI_H__
 #define __DUIWINVERAPI_H__
 
+#include "duidef.h"
 
 namespace DUI
 {
+	#pragma managed(push, off)
+	#ifndef _ATL_STATIC_LIB_IMPL
+		extern inline BOOL __cdecl _DuiInitializeCriticalSectionEx(_Out_ LPCRITICAL_SECTION lpCriticalSection, _In_ DWORD dwSpinCount, _In_ DWORD Flags)
+		{
+	#if (NTDDI_VERSION >= NTDDI_VISTA) && !defined(_USING_V110_SDK71_) && !defined(_ATL_XP_TARGETING)
+			// InitializeCriticalSectionEx is available in Vista or later, desktop or store apps
+			return ::InitializeCriticalSectionEx(lpCriticalSection, dwSpinCount, Flags);
+	#else
+			UNREFERENCED_PARAMETER(Flags);
 
+			// ...otherwise fall back to using InitializeCriticalSectionAndSpinCount.
+			return ::InitializeCriticalSectionAndSpinCount(lpCriticalSection, dwSpinCount);
+	#endif
+		}
+	#else // _ATL_STATIC_LIB_IMPL
+		BOOL __cdecl _DuiInitializeCriticalSectionEx(_Out_ LPCRITICAL_SECTION lpCriticalSection, _In_ DWORD dwSpinCount, _In_ DWORD Flags);
+	#endif // _ATL_STATIC_LIB_IMPL
+	#pragma managed(pop)
 }
+
 #endif /* __DUIWINVERAPI_H__ */
 
 

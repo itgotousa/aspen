@@ -1,9 +1,97 @@
 #ifndef __DUICORE_H__
 #define __DUICORE_H__
 
+#include "duisimpcoll.h"
+#include "duiwinverapi.h"
 
 namespace DUI
 {
+	// COM Sync Classes
+	class DComCriticalSection
+	{
+	public:
+		DComCriticalSection() throw()
+		{
+			memset(&m_sec, 0, sizeof(CRITICAL_SECTION));
+		}
+
+		~DComCriticalSection()
+		{
+		}
+
+		_Success_(1) _Acquires_lock_(this->m_sec) HRESULT Lock() throw()
+		{
+			EnterCriticalSection(&m_sec);
+			return S_OK;
+		}
+		_Success_(1) _Releases_lock_(this->m_sec) HRESULT Unlock() throw()
+		{
+			LeaveCriticalSection(&m_sec);
+			return S_OK;
+		}
+		HRESULT Init() throw()
+		{
+			HRESULT hRes = S_OK;
+			if (!_DuiInitializeCriticalSectionEx(&m_sec, 0, 0))
+			{
+				hRes = HRESULT_FROM_WIN32(GetLastError());
+			}
+
+			return hRes;
+		}
+
+		HRESULT Term() throw()
+		{
+			DeleteCriticalSection(&m_sec);
+			return S_OK;
+		}
+		CRITICAL_SECTION m_sec;
+	};
+
+	/////////////////////////////////////////////////////////////////////////////
+	// Module
+
+	// Used by any project that uses ATL
+	struct _DUI_BASE_MODULE70
+	{
+		UINT cbSize;
+		HINSTANCE m_hInst;
+		HINSTANCE m_hInstResource;
+		DWORD dwAtlBuildVer;
+		const GUID* pguidVer;
+		DComCriticalSection m_csResource;
+		DSimpleArray<HINSTANCE> m_rgResourceInstance;
+	};
+	typedef _DUI_BASE_MODULE70 _DUI_BASE_MODULE;
+
+	class DAtlBaseModule :
+		public _DUI_BASE_MODULE
+	{
+	public:
+		static bool m_bInitFailed;
+		DAtlBaseModule() throw();
+		~DAtlBaseModule() throw ();
+
+		HINSTANCE GetModuleInstance() throw()
+		{
+			return m_hInst;
+		}
+		HINSTANCE GetResourceInstance() throw()
+		{
+			return m_hInstResource;
+		}
+		HINSTANCE SetResourceInstance(_In_ HINSTANCE hInst) throw()
+		{
+			return static_cast<HINSTANCE>(InterlockedExchangePointer((void**)&m_hInstResource, hInst));
+		}
+
+		bool AddResourceInstance(_In_ HINSTANCE hInst) throw();
+		bool RemoveResourceInstance(_In_ HINSTANCE hInst) throw();
+		HINSTANCE GetHInstanceAt(_In_ int i) throw();
+	};
+
+	__declspec(selectany) bool DAtlBaseModule::m_bInitFailed = false;
+	extern DAtlBaseModule _DuiBaseModule;
 
 }
 #endif /* __DUICORE_H__ */
@@ -131,15 +219,15 @@ inline void AtlAssertValidObject(
 #endif
 
 // COM Sync Classes
-class CComCriticalSection
+class DComCriticalSection
 {
 public:
-	CComCriticalSection() throw()
+	DComCriticalSection() throw()
 	{
 		memset(&m_sec, 0, sizeof(CRITICAL_SECTION));
 	}
 
-	~CComCriticalSection()
+	~DComCriticalSection()
 	{
 	}
 
@@ -173,18 +261,18 @@ public:
 };
 
 class CComAutoCriticalSection :
-	public CComCriticalSection
+	public DComCriticalSection
 {
 public:
 	CComAutoCriticalSection()
 	{
-		HRESULT hr = CComCriticalSection::Init();
+		HRESULT hr = DComCriticalSection::Init();
 		if (FAILED(hr))
 			AtlThrow(hr);
 	}
 	~CComAutoCriticalSection() throw()
 	{
-		CComCriticalSection::Term();
+		DComCriticalSection::Term();
 	}
 private :
 	HRESULT Init(); // Not implemented. CComAutoCriticalSection::Init should never be called
@@ -192,7 +280,7 @@ private :
 };
 
 class CComSafeDeleteCriticalSection :
-	public CComCriticalSection
+	public DComCriticalSection
 {
 public:
 	CComSafeDeleteCriticalSection(): m_bInitialized(false)
@@ -206,13 +294,13 @@ public:
 			return;
 		}
 		m_bInitialized = false;
-		CComCriticalSection::Term();
+		DComCriticalSection::Term();
 	}
 
 	HRESULT Init() throw()
 	{
 		ATLASSERT( !m_bInitialized );
-		HRESULT hr = CComCriticalSection::Init();
+		HRESULT hr = DComCriticalSection::Init();
 		if (SUCCEEDED(hr))
 		{
 			m_bInitialized = true;
@@ -227,7 +315,7 @@ public:
 			return S_OK;
 		}
 		m_bInitialized = false;
-		return CComCriticalSection::Term();
+		return DComCriticalSection::Term();
 	}
 
 	_Success_(1) _Acquires_lock_(this->m_sec)
@@ -239,7 +327,7 @@ public:
 		// CComAutoDeleteCriticalSection. It has to be initialized
 		// by calling CComObjectRootEx::_AtlInitialConstruct
 		ATLASSUME(m_bInitialized);
-		return CComCriticalSection::Lock();
+		return DComCriticalSection::Lock();
 	}
 
 private:
@@ -279,25 +367,25 @@ public:
 // Module
 
 // Used by any project that uses ATL
-struct _ATL_BASE_MODULE70
+struct _DUI_BASE_MODULE70
 {
 	UINT cbSize;
 	HINSTANCE m_hInst;
 	HINSTANCE m_hInstResource;
 	DWORD dwAtlBuildVer;
 	const GUID* pguidVer;
-	CComCriticalSection m_csResource;
-	CSimpleArray<HINSTANCE> m_rgResourceInstance;
+	DComCriticalSection m_csResource;
+	DSimpleArray<HINSTANCE> m_rgResourceInstance;
 };
-typedef _ATL_BASE_MODULE70 _ATL_BASE_MODULE;
+typedef _DUI_BASE_MODULE70 _ATL_BASE_MODULE;
 
-class CAtlBaseModule :
+class DAtlBaseModule :
 	public _ATL_BASE_MODULE
 {
 public :
 	static bool m_bInitFailed;
-	CAtlBaseModule() throw();
-	~CAtlBaseModule() throw ();
+	DAtlBaseModule() throw();
+	~DAtlBaseModule() throw ();
 
 	HINSTANCE GetModuleInstance() throw()
 	{
@@ -317,8 +405,8 @@ public :
 	HINSTANCE GetHInstanceAt(_In_ int i) throw();
 };
 
-__declspec(selectany) bool CAtlBaseModule::m_bInitFailed = false;
-extern CAtlBaseModule _AtlBaseModule;
+__declspec(selectany) bool DAtlBaseModule::m_bInitFailed = false;
+extern DAtlBaseModule _AtlBaseModule;
 
 #ifdef _ATL_USE_WINAPI_FAMILY_DESKTOP_APP
 

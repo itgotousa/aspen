@@ -11,9 +11,14 @@
 
 #include "dui/duidef.h"
 #include "dui/duitrace.h"
-//#include "dui/duistdthunk.h"
+#include "dui/duistdthunk.h"
+#include "dui/duicore.h"
 #include "dui/duibase.h"
-#include "dui/duiwin.h"
+#include "dui/duisimpcoll.h"
+#include "dui/duiwinverapi.h"
+
+//#include "dui/duibase.h"
+//#include "dui/duiwin.h"
 
 #include "View.h"
 #include "aboutdlg.h"
@@ -45,7 +50,7 @@ public:
 		_Module.AddMessageLoop(&theLoop);
 
 		_RunData* pData = (_RunData*)lpData;
-#if 0
+
 		CMainFrame wndFrame;
 
 		if(wndFrame.CreateEx() == NULL)
@@ -55,7 +60,7 @@ public:
 		}
 
 		wndFrame.ShowWindow(pData->nCmdShow);
-#endif
+
 		delete pData;
 		
 		int nRet = theLoop.Run();
@@ -143,6 +148,7 @@ public:
 	}
 };
 
+#if 0
 class DWin : public DUI::DWindowImpl<DWin>
 {
 public:
@@ -172,6 +178,7 @@ public:
 		return 0;
 	}
 };
+#endif
 
 int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPTSTR lpstrCmdLine, int nCmdShow)
 {
@@ -185,7 +192,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPTSTR lp
 
 	int nRet = 0;
 	// BLOCK: Run application
-#if 0
+#if 10
 	{
 		CAspenThreadManager mgr;
 		nRet = mgr.Run(lpstrCmdLine, nCmdShow);
@@ -194,11 +201,11 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPTSTR lp
 
 	//CPaintManagerUI::SetInstance(hInstance);
 	//CDUIWnd
-	DWin w;
-	w.Create(NULL);
-	if (w.IsWindow())
+	//DWin w;
+	//w.Create(NULL);
+	//if (w.IsWindow())
 	{
-		w.ShowWindow(SW_SHOW);
+		//w.ShowWindow(SW_SHOW);
 	}
 
 	_Module.Term();

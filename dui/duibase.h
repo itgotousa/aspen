@@ -1,6 +1,7 @@
 #ifndef __DUIBASE_H__
 #define __DUIBASE_H__
 
+#include "duidef.h"
 
 namespace DUI
 {
@@ -11,6 +12,103 @@ namespace DUI
 		DWORD m_dwThreadID;
 		_DuiCreateWndData* m_pNext;
 	};
+
+	/////////////////////////////////////////////////////////////////////////////
+	// Threading Model Support
+
+	template< class TLock >
+	class DComCritSecLock
+	{
+	public:
+		_Post_same_lock_(cs, this->m_cs)
+			_When_(bInitialLock != 0, _Acquires_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked != 0))
+			_When_(bInitialLock == 0, _Post_satisfies_(this->m_bLocked == 0))
+			DComCritSecLock(
+				_Inout_ TLock& cs,
+				_In_ bool bInitialLock = true);
+
+		_When_(this->m_bLocked != 0, _Requires_lock_held_(this->m_cs) _Releases_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked == 0))
+			~DComCritSecLock() throw();
+
+		_Acquires_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked != 0)
+			_On_failure_(_Post_satisfies_(this->m_bLocked == 0))
+			HRESULT Lock() throw();
+
+		_Releases_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked == 0)
+			void Unlock() throw();
+
+		// Implementation
+	private:
+		TLock& m_cs;
+		bool m_bLocked;
+
+		// Private to avoid accidental use
+		DComCritSecLock(_In_ const DComCritSecLock&) throw();
+		DComCritSecLock& operator=(_In_ const DComCritSecLock&) throw();
+	};
+
+	template< class TLock >
+	_Post_same_lock_(cs, this->m_cs)
+		_When_(bInitialLock != 0, _Acquires_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked != 0))
+		_When_(bInitialLock == 0, _Post_satisfies_(this->m_bLocked == 0))
+		inline DComCritSecLock< TLock >::DComCritSecLock(
+			_Inout_ TLock& cs,
+			_In_ bool bInitialLock) :
+		m_cs(cs),
+		m_bLocked(false)
+	{
+		if (bInitialLock)
+		{
+			HRESULT hr;
+
+			hr = Lock();
+			if (FAILED(hr))
+			{
+				DuiThrow(hr);
+			}
+		}
+	}
+
+	template< class TLock >
+	_When_(this->m_bLocked != 0, _Requires_lock_held_(this->m_cs) _Releases_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked == 0))
+		inline DComCritSecLock< TLock >::~DComCritSecLock() throw()
+	{
+		if (m_bLocked)
+		{
+			Unlock();
+		}
+	}
+
+	template< class TLock >
+	_Acquires_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked != 0)
+		_On_failure_(_Post_satisfies_(this->m_bLocked == 0))
+#pragma warning(suppress: 26165) // Lock is acquired by template lock object '(this->m_cs).m_sec'
+		inline HRESULT DComCritSecLock< TLock >::Lock() throw()
+	{
+		HRESULT hr;
+
+		DUIASSERT(!m_bLocked);
+		DUIASSUME(!m_bLocked);
+		hr = m_cs.Lock();
+		if (FAILED(hr))
+		{
+			return(hr);
+		}
+		m_bLocked = true;
+
+		return(S_OK);
+	}
+
+	template< class TLock >
+	_Releases_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked == 0)
+#pragma warning(suppress: 26167) // Lock is released by template lock object '(this->m_cs).m_sec'
+		inline void DComCritSecLock< TLock >::Unlock() throw()
+	{
+		DUIASSUME(m_bLocked);
+#pragma warning(suppress: 26110) // Template parameter hides lock object
+		m_cs.Unlock();
+		m_bLocked = false;
+	}
 
 }
 #endif /* __DUIBASE_H__ */
@@ -258,7 +356,7 @@ struct _ATL_OBJMAP_ENTRY110
 	_ATL_CATMAPFUNC* pfnGetCategoryMap;
 	HRESULT WINAPI RevokeClassObject()
 	{
-		ATLASSUME(pCache != NULL);
+		DUIASSUME(pCache != NULL);
 
 		if (pCache->dwRegister == 0)
 			return S_OK;
@@ -268,7 +366,7 @@ struct _ATL_OBJMAP_ENTRY110
 		_In_ DWORD dwClsContext,
 		_In_ DWORD dwFlags)
 	{
-		ATLASSUME(pCache != NULL);
+		DUIASSUME(pCache != NULL);
 
 		IUnknown* p = NULL;
 		if (pfnGetClassObject == NULL)
@@ -326,18 +424,18 @@ bool __declspec(selectany) _AtlRegisterPerUser = false;
 // Threading Model Support
 
 template< class TLock >
-class CComCritSecLock
+class DComCritSecLock
 {
 public:
 	_Post_same_lock_(cs, this->m_cs)
 	_When_(bInitialLock != 0, _Acquires_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked != 0))
 	_When_(bInitialLock == 0, _Post_satisfies_(this->m_bLocked == 0))
-	CComCritSecLock(
+	DComCritSecLock(
 		_Inout_ TLock& cs,
 		_In_ bool bInitialLock = true );
 
 	_When_(this->m_bLocked != 0, _Requires_lock_held_(this->m_cs) _Releases_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked == 0))
-	~CComCritSecLock() throw();
+	~DComCritSecLock() throw();
 
 	_Acquires_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked != 0)
 	_On_failure_(_Post_satisfies_(this->m_bLocked == 0))
@@ -352,15 +450,15 @@ private:
 	bool m_bLocked;
 
 // Private to avoid accidental use
-	CComCritSecLock(_In_ const CComCritSecLock&) throw();
-	CComCritSecLock& operator=(_In_ const CComCritSecLock&) throw();
+	DComCritSecLock(_In_ const DComCritSecLock&) throw();
+	DComCritSecLock& operator=(_In_ const DComCritSecLock&) throw();
 };
 
 template< class TLock >
 _Post_same_lock_(cs, this->m_cs)
 _When_(bInitialLock != 0, _Acquires_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked != 0))
 _When_(bInitialLock == 0, _Post_satisfies_(this->m_bLocked == 0))
-inline CComCritSecLock< TLock >::CComCritSecLock(
+inline DComCritSecLock< TLock >::DComCritSecLock(
 		_Inout_ TLock& cs,
 		_In_ bool bInitialLock) :
 	m_cs( cs ),
@@ -373,14 +471,14 @@ inline CComCritSecLock< TLock >::CComCritSecLock(
 		hr = Lock();
 		if( FAILED( hr ) )
 		{
-			AtlThrow( hr );
+			DuiThrow( hr );
 		}
 	}
 }
 
 template< class TLock >
 _When_(this->m_bLocked != 0, _Requires_lock_held_(this->m_cs) _Releases_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked == 0))
-inline CComCritSecLock< TLock >::~CComCritSecLock() throw()
+inline DComCritSecLock< TLock >::~DComCritSecLock() throw()
 {
 	if( m_bLocked )
 	{
@@ -392,12 +490,12 @@ template< class TLock >
 _Acquires_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked != 0)
 _On_failure_(_Post_satisfies_(this->m_bLocked == 0))
 #pragma warning(suppress: 26165) // Lock is acquired by template lock object '(this->m_cs).m_sec'
-inline HRESULT CComCritSecLock< TLock >::Lock() throw()
+inline HRESULT DComCritSecLock< TLock >::Lock() throw()
 {
 	HRESULT hr;
 
-	ATLASSERT( !m_bLocked );
-	ATLASSUME(!m_bLocked);
+	DUIASSERT( !m_bLocked );
+	DUIASSUME(!m_bLocked);
 	hr = m_cs.Lock();
 	if( FAILED( hr ) )
 	{
@@ -411,9 +509,9 @@ inline HRESULT CComCritSecLock< TLock >::Lock() throw()
 template< class TLock >
 _Releases_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked == 0)
 #pragma warning(suppress: 26167) // Lock is released by template lock object '(this->m_cs).m_sec'
-inline void CComCritSecLock< TLock >::Unlock() throw()
+inline void DComCritSecLock< TLock >::Unlock() throw()
 {
-	ATLASSUME( m_bLocked );
+	DUIASSUME( m_bLocked );
 #pragma warning(suppress: 26110) // Template parameter hides lock object
 	m_cs.Unlock();
 	m_bLocked = false;
@@ -712,7 +810,7 @@ LPCTSTR AtlDebugGetClassName(_In_opt_ T*)
 // Used in QI and CreateInstance
 #define _ATL_VALIDATE_OUT_POINTER(x)\
 	do {					\
-	ATLASSERT(x != NULL);	\
+	DUIASSERT(x != NULL);	\
 	if (x == NULL)			\
 		return E_POINTER;	\
 	*x = NULL;				\
@@ -781,7 +879,7 @@ public:
 				// If this assert fires, it means you attempted to assign one CAutoVectorPtr to another when they both contained
 				// a pointer to the same underlying vector. This means a bug in your code, since your vector will get
 				// double-deleted.
-				ATLASSERT(FALSE);
+				DUIASSERT(FALSE);
 
 				// For safety, we are going to detach the other CAutoVectorPtr to avoid a double-free. Your code still
 				// has a bug, though.
@@ -817,7 +915,7 @@ public:
 	// Allocate the vector
 	bool Allocate(_In_ size_t nElements) throw()
 	{
-		ATLASSUME( m_p == NULL );
+		DUIASSUME( m_p == NULL );
 		ATLTRY( m_p = _ATL_NEW T[nElements] );
 		if( m_p == NULL )
 		{
@@ -829,7 +927,7 @@ public:
 	// Attach to an existing pointer (takes ownership)
 	void Attach(_In_opt_ T* p) throw()
 	{
-		ATLASSUME( m_p == NULL );
+		DUIASSUME( m_p == NULL );
 		m_p = p;
 	}
 	// Detach the pointer (releases ownership)
@@ -887,7 +985,7 @@ public:
 		{
 			// This means that two CAutoPtrs of two different types had the same m_p in them
 			// which is never correct
-			ATLASSERT(FALSE);
+			DUIASSERT(FALSE);
 		}
 		else
 		{
@@ -906,7 +1004,7 @@ public:
 				// a pointer to the same underlying object. This means a bug in your code, since your object will get
 				// double-deleted.
 #ifdef ATL_AUTOPTR_ASSIGNMENT_ASSERT
-				ATLASSERT(FALSE);
+				DUIASSERT(FALSE);
 #endif
 
 				// For safety, we are going to detach the other CAutoPtr to avoid a double-free. Your code still
@@ -946,14 +1044,14 @@ public:
 	}
 	T* operator->() const throw()
 	{
-		ATLASSUME( m_p != NULL );
+		DUIASSUME( m_p != NULL );
 		return( m_p );
 	}
 
 	// Attach to an existing pointer (takes ownership)
 	void Attach(_In_opt_ T* p) throw()
 	{
-		ATLASSUME( m_p == NULL );
+		DUIASSUME( m_p == NULL );
 		m_p = p;
 	}
 	// Detach the pointer (releases ownership)
@@ -1012,7 +1110,7 @@ public:
 		{
 			// This means that two CAutoPtrs of two different types had the same m_p in them
 			// which is never correct
-			ATLASSERT(FALSE);
+			DUIASSERT(FALSE);
 		}
 		else
 		{
@@ -1030,7 +1128,7 @@ public:
 				// If this assert fires, it means you attempted to assign one CAutoPtr to another when they both contained
 				// a pointer to the same underlying object. This means a bug in your code, since your object will get
 				// double-deleted.
-				ATLASSERT(FALSE);
+				DUIASSERT(FALSE);
 
 				// For safety, we are going to detach the other CAutoPtr to avoid a double-free. Your code still
 				// has a bug, though.
@@ -1069,14 +1167,14 @@ public:
 	}
 	T* operator->() const throw()
 	{
-		ATLASSUME( m_p != NULL );
+		DUIASSUME( m_p != NULL );
 		return( m_p );
 	}
 
 	// Attach to an existing pointer (takes ownership)
 	void Attach(_In_opt_ T* p) throw()
 	{
-		ATLASSUME( m_p == NULL );
+		DUIASSUME( m_p == NULL );
 		m_p = p;
 	}
 	// Detach the pointer (releases ownership)
@@ -1251,7 +1349,7 @@ inline CHandle::operator HANDLE() const throw()
 
 inline void CHandle::Attach(_In_ HANDLE h) throw()
 {
-	ATLASSUME( m_h == NULL );
+	DUIASSUME( m_h == NULL );
 	m_h = h;  // Take ownership
 }
 
@@ -1303,7 +1401,7 @@ public:
 	_Acquires_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked != 0)
 	void Lock()
 	{
-		ATLASSERT( !m_bLocked );
+		DUIASSERT( !m_bLocked );
 
 		::EnterCriticalSection( &m_cs );
 		m_bLocked = true;
@@ -1312,7 +1410,7 @@ public:
 	_Releases_lock_(this->m_cs) _Post_satisfies_(this->m_bLocked == 0)
 	void Unlock() throw()
 	{
-		ATLASSUME( m_bLocked );
+		DUIASSUME( m_bLocked );
 		::LeaveCriticalSection( &m_cs );
 		m_bLocked = false;
 	}
@@ -1509,13 +1607,13 @@ struct _QIThunk
 		_In_ REFIID iid,
 		_Outptr_ void** pp)
 	{
-		ATLASSUME(m_dwRef >= 0);
-		ATLASSUME(m_pUnk != NULL);
+		DUIASSUME(m_dwRef >= 0);
+		DUIASSUME(m_pUnk != NULL);
 		return m_pUnk->QueryInterface(iid, pp);
 	}
 	STDMETHOD_(ULONG, AddRef)()
 	{
-		ATLASSUME(m_pUnk != NULL);
+		DUIASSUME(m_pUnk != NULL);
 		if (m_bBreak)
 			__debugbreak();
 		m_pUnk->AddRef();
@@ -1523,10 +1621,10 @@ struct _QIThunk
 	}
 	ULONG InternalAddRef()
 	{
-		ATLASSUME(m_pUnk != NULL);
+		DUIASSUME(m_pUnk != NULL);
 		if (m_bBreak)
 			__debugbreak();
-		ATLASSUME(m_dwRef >= 0);
+		DUIASSUME(m_dwRef >= 0);
 		long l = ::InterlockedIncrement(&m_dwRef);
 
 		TCHAR buf[512+1];
@@ -2616,7 +2714,7 @@ public:
 		if (FAILED(m_csObjMap.Init()))
 		{
 			ATLTRACE(atlTraceCOM, 0, _T("ERROR : Unable to initialize critical section in CAtlComModule\n"));
-			ATLASSERT(0);
+			DUIASSERT(0);
 			CAtlBaseModule::m_bInitFailed = true;
 			return;
 		}
@@ -2752,7 +2850,7 @@ public:
 		if (FAILED(m_cs.Init()))
 		{
 			ATLTRACE(atlTraceCOM, 0, _T("ERROR : Unable to initialize critical section in CAtlDebugInterfacesModule\n"));
-			ATLASSERT(0);
+			DUIASSERT(0);
 			CAtlBaseModule::m_bInitFailed = true;
 		}
 	}
@@ -2772,12 +2870,12 @@ public:
 			return E_POINTER;
 		IUnknown* p = *pp;
 		_QIThunk* pThunk = NULL;
-		CComCritSecLock<CComCriticalSection> lock(m_cs, false);
+		DComCritSecLock<CComCriticalSection> lock(m_cs, false);
 		HRESULT hr = lock.Lock();
 		if (FAILED(hr))
 		{
 			ATLTRACE(atlTraceCOM, 0, _T("ERROR : Unable to lock critical section in CAtlDebugInterfacesModule\n"));
-			ATLASSERT(0);
+			DUIASSERT(0);
 			return hr;
 		}
 
@@ -2820,12 +2918,12 @@ public:
 		*ppThunkRet = NULL;
 
 		_QIThunk* pThunk = NULL;
-		CComCritSecLock<CComCriticalSection> lock(m_cs, false);
+		DComCritSecLock<CComCriticalSection> lock(m_cs, false);
 		HRESULT hr = lock.Lock();
 		if (FAILED(hr))
 		{
 			ATLTRACE(atlTraceCOM, 0, _T("ERROR : Unable to lock critical section in CAtlDebugInterfacesModule\n"));
-			ATLASSERT(0);
+			DUIASSERT(0);
 			return hr;
 		}
 
@@ -2857,12 +2955,12 @@ public:
 	}
 	void DeleteNonAddRefThunk(_In_ IUnknown* pUnk) throw()
 	{
-		CComCritSecLock<CComCriticalSection> lock(m_cs, false);
+		DComCritSecLock<CComCriticalSection> lock(m_cs, false);
 		HRESULT hr = lock.Lock();
 		if (FAILED(hr))
 		{
 			ATLTRACE(atlTraceCOM, 0, _T("ERROR : Unable to lock critical section in CAtlDebugInterfacesModule\n"));
-			ATLASSERT(0);
+			DUIASSERT(0);
 			return;
 		}
 
@@ -2878,12 +2976,12 @@ public:
 	}
 	void DeleteThunk(_In_ _QIThunk* p) throw()
 	{
-		CComCritSecLock<CComCriticalSection> lock(m_cs, false);
+		DComCritSecLock<CComCriticalSection> lock(m_cs, false);
 		HRESULT hr = lock.Lock();
 		if (FAILED(hr))
 		{
 			ATLTRACE(atlTraceCOM, 0, _T("ERROR : Unable to lock critical section in CAtlDebugInterfacesModule\n"));
-			ATLASSERT(0);
+			DUIASSERT(0);
 			return;
 		}
 
@@ -2920,10 +3018,10 @@ __declspec (selectany) CAtlDebugInterfacesModule _AtlDebugInterfacesModule;
 
 inline ULONG _QIThunk::Release()
 {
-	ATLASSUME(m_pUnk != NULL);
+	DUIASSUME(m_pUnk != NULL);
 	if (m_bBreak)
 		__debugbreak();
-	ATLASSUME(m_dwRef > 0);
+	DUIASSUME(m_dwRef > 0);
 
 	// save copies of member variables we wish to use after the InterlockedDecrement
 	UINT nIndex = m_nIndex;
@@ -2961,7 +3059,7 @@ public:
 		HRESULT hr = AtlWinModuleInit(this);
 		if (FAILED(hr))
 		{
-			ATLASSERT(0);
+			DUIASSERT(0);
 			CAtlBaseModule::m_bInitFailed = true;
 			cbSize = 0;
 			return;
@@ -3057,7 +3155,7 @@ public :
 	{
 		// Should have only one instance of a class
 		// derived from CAtlModule in a project.
-		ATLASSERT(_pAtlModule == NULL);
+		DUIASSERT(_pAtlModule == NULL);
 		cbSize = 0;
 		m_pTermFuncs = NULL;
 
@@ -3068,7 +3166,7 @@ public :
 		if (FAILED(m_csStaticDataInitAndTypeInfo.Init()))
 		{
 			ATLTRACE(atlTraceGeneral, 0, _T("ERROR : Unable to initialize critical section in CAtlModule\n"));
-			ATLASSERT(0);
+			DUIASSERT(0);
 			CAtlBaseModule::m_bInitFailed = true;
 			return;
 		}
@@ -3127,7 +3225,7 @@ public :
 
 	virtual HRESULT GetGITPtr(_Outptr_ IGlobalInterfaceTable** ppGIT) throw()
 	{
-		ATLASSERT(ppGIT != NULL);
+		DUIASSERT(ppGIT != NULL);
 
 		if (ppGIT == NULL)
 			return E_POINTER;
@@ -3141,7 +3239,7 @@ public :
 
 		if (SUCCEEDED(hr))
 		{
-			ATLASSUME(m_pGIT != NULL);
+			DUIASSUME(m_pGIT != NULL);
 			*ppGIT = m_pGIT;
 			m_pGIT->AddRef();
 		}
@@ -3415,7 +3513,7 @@ public :
 #pragma warning(disable:4483)
 		using namespace __identifier("<AtlImplementationDetails>");
 #pragma warning(pop)  // disable 4483
-		ATLASSERT(DllModuleInitialized == false);
+		DUIASSERT(DllModuleInitialized == false);
 		DllModuleInitialized = true;
 		_DllMain(DLL_PROCESS_ATTACH, NULL);
 #endif
@@ -3428,7 +3526,7 @@ public :
 #pragma warning(disable:4483)
 		using namespace __identifier("<AtlImplementationDetails>");
 #pragma warning(pop)  // disable 4483
-		ATLASSERT(DllModuleInitialized == true);
+		DUIASSERT(DllModuleInitialized == true);
 		_DllMain(DLL_PROCESS_DETACH, NULL);
 #endif
 		_AtlComModule.ExecuteObjectMain(false);
@@ -3446,7 +3544,7 @@ public :
 		{
 			if (CAtlBaseModule::m_bInitFailed)
 			{
-				ATLASSERT(0);
+				DUIASSERT(0);
 				return FALSE;
 			}
 		}
@@ -3535,7 +3633,7 @@ inline BOOL WINAPI CAtlDllModuleT<T>::DllMain(
 #pragma warning(pop)  // disable 4483
 	if (dwReason == DLL_PROCESS_ATTACH)
 	{
-		ATLASSERT(DllModuleInitialized == false);
+		DUIASSERT(DllModuleInitialized == false);
 	}
 	return TRUE;
 #else
@@ -3692,7 +3790,7 @@ public :
 	{
 		if (CAtlBaseModule::m_bInitFailed)
 		{
-			ATLASSERT(0);
+			DUIASSERT(0);
 			return -1;
 		}
 		T* pT = static_cast<T*>(this);
@@ -3706,7 +3804,7 @@ public :
 			// COM and InitializeCOM trying to initialize COM with different flags.
 			if (hr != RPC_E_CHANGED_MODE || GetModuleHandle(_T("Mscoree.dll")) == NULL)
 			{
-				ATLASSERT(0);
+				DUIASSERT(0);
 				return hr;
 			}
 		}
@@ -3827,7 +3925,7 @@ public :
 				else
 				{
 					hr = CoResumeClassObjects();
-					ATLASSERT(SUCCEEDED(hr));
+					DUIASSERT(SUCCEEDED(hr));
 					if (FAILED(hr))
 					{
 						::SetEvent(m_hEventShutdown); // tell monitor to shutdown
@@ -3838,7 +3936,7 @@ public :
 			else
 			{
 				hr = CoResumeClassObjects();
-				ATLASSERT(SUCCEEDED(hr));
+				DUIASSERT(SUCCEEDED(hr));
 			}
 
 			if (FAILED(hr))
@@ -3851,7 +3949,7 @@ public :
 
 #endif	// _ATL_NO_COM_SUPPORT
 
-		ATLASSERT(SUCCEEDED(hr));
+		DUIASSERT(SUCCEEDED(hr));
 		return hr;
 	}
 
@@ -3900,7 +3998,7 @@ public :
 			hr = pT->PostMessageLoop();
 		}
 
-		ATLASSERT(SUCCEEDED(hr));
+		DUIASSERT(SUCCEEDED(hr));
 		return hr;
 	}
 
@@ -3946,7 +4044,7 @@ public :
 	{
 		if (CAtlBaseModule::m_bInitFailed)
 		{
-			ATLASSERT(0);
+			DUIASSERT(0);
 			return -1;
 		}
 
@@ -4235,7 +4333,7 @@ public :
 					}
 
 					hr = CoResumeClassObjects();
-					ATLASSERT(SUCCEEDED(hr));
+					DUIASSERT(SUCCEEDED(hr));
 					if (FAILED(hr))
 					{
 						::SetEvent(this->m_hEventShutdown); // tell monitor to shutdown
@@ -4256,7 +4354,7 @@ public :
 				}
 
 				hr = CoResumeClassObjects();
-				ATLASSERT(SUCCEEDED(hr));
+				DUIASSERT(SUCCEEDED(hr));
 			}
 
 			if (FAILED(hr))
@@ -4281,7 +4379,7 @@ public :
 
 #endif	// _ATL_NO_COM_SUPPORT
 
-		ATLASSERT(SUCCEEDED(hr));
+		DUIASSERT(SUCCEEDED(hr));
 		return hr;
 	}
 
@@ -4714,19 +4812,19 @@ public :
 	{
 		// Should have only one instance of a class
 		// derived from CComModule in a project.
-		ATLASSERT(_pModule == NULL);
+		DUIASSERT(_pModule == NULL);
 		_pModule = this;
 #if !defined(_ATL_NATIVE_INITIALIZATION)
 #pragma warning(push)  // disable 4483
 #pragma warning(disable:4483)
 		using namespace __identifier("<AtlImplementationDetails>");
 #pragma warning(pop)  // disable 4483
-		ATLASSERT(ComModuleInitialized == false);
+		DUIASSERT(ComModuleInitialized == false);
 		// If ComModuleHelper.Module == NULL it mean that DllMain has not been called, so we assume CComModule lives in
 		// an exe and not in a dll
 		if (ComModuleHelper.Module != NULL)
 		{
-			ATLASSERT(ComModuleHelper.Module == this);
+			DUIASSERT(ComModuleHelper.Module == this);
 			_DllMain(ComModuleHelper.Instance, DLL_PROCESS_ATTACH, NULL, ComModuleHelper.ObjectMap, ComModuleHelper.LibraryId);
 		}
 		ComModuleInitialized = true;
@@ -4740,12 +4838,12 @@ public :
 #pragma warning(disable:4483)
 		using namespace __identifier("<AtlImplementationDetails>");
 #pragma warning(pop)  // disable 4483
-		ATLASSERT(ComModuleInitialized == true);
+		DUIASSERT(ComModuleInitialized == true);
 		// If ComModuleHelper.Module == NULL it mean that DllMain has not been called, so we assume CComModule lives in
 		// an exe and not in a dll
 		if (ComModuleHelper.Module != NULL)
 		{
-			ATLASSERT(ComModuleHelper.Module == this);
+			DUIASSERT(ComModuleHelper.Module == this);
 			_DllMain(ComModuleHelper.Instance, DLL_PROCESS_DETACH, NULL, ComModuleHelper.ObjectMap, ComModuleHelper.LibraryId);
 		}
 #endif
@@ -5014,7 +5112,7 @@ public :
 		_In_ REFIID /*riid*/,
 		_COM_Outptr_ void** /*ppvObj*/) throw()
 	{
-		ATLASSERT(0);
+		DUIASSERT(0);
 		_Analysis_assume_(FALSE);
 		ATLTRACENOTIMPL(_T("CComModule::CreateInstance"));
 	}
@@ -5037,7 +5135,7 @@ public :
 		{
 			if (CAtlBaseModule::m_bInitFailed)
 			{
-				ATLASSERT(0);
+				DUIASSERT(0);
 				return FALSE;
 			}
 
@@ -5089,7 +5187,7 @@ inline BOOL WINAPI CComModule::DllMain(
 	UNREFERENCED_PARAMETER(lpReserved);
 	if (dwReason == DLL_PROCESS_ATTACH)
 	{
-		ATLASSERT(ComModuleInitialized == false);
+		DUIASSERT(ComModuleInitialized == false);
 		ComModuleHelper.Initialize(this, hInstance, pObjMap, pLibID);
 	}
 	return TRUE;
@@ -5121,7 +5219,7 @@ public:
 		_In_ DWORD dwCreationFlags,
 		_Out_opt_ DWORD *pdwThreadId) throw()
 	{
-		ATLASSERT(sizeof(DWORD) == sizeof(unsigned int)); // sanity check for pdwThreadId
+		DUIASSERT(sizeof(DWORD) == sizeof(unsigned int)); // sanity check for pdwThreadId
 
 		// _beginthreadex calls CreateThread which will set the last error value before it returns.
 		return (HANDLE) _beginthreadex(lpsa, dwStackSize, (unsigned int (__stdcall *)(void *)) pfnThreadProc, pvParam, dwCreationFlags, (unsigned int *) pdwThreadId);
@@ -5206,7 +5304,7 @@ public:
 	DWORD Apartment()
 	{
 		HRESULT hr = ::CoInitialize(NULL);
-		ATLASSERT(SUCCEEDED(hr));
+		DUIASSERT(SUCCEEDED(hr));
 		UNREFERENCED_PARAMETER(hr);
 		MSG msg;
 		while(GetMessage(&msg, 0, 0, 0) > 0)
@@ -5292,12 +5390,12 @@ class ATL_NO_VTABLE CAtlAutoThreadModuleT :
 public:
 	CAtlAutoThreadModuleT(_In_ int nThreads = T::GetDefaultThreads())
 	{
-		ATLASSERT(_pAtlAutoThreadModule == NULL);
+		DUIASSERT(_pAtlAutoThreadModule == NULL);
 		_pAtlAutoThreadModule = this;
 		m_nThreads= 0;
 
 		m_pApartments = _ATL_NEW CComApartment[nThreads];
-		ATLASSERT(m_pApartments != NULL);
+		DUIASSERT(m_pApartments != NULL);
 		if(m_pApartments == NULL)
 		{
 			CAtlBaseModule::m_bInitFailed = true;
@@ -5326,7 +5424,7 @@ public:
 					hr = E_INVALIDARG;
 					break;
 				}
-				ATLASSERT(0);
+				DUIASSERT(0);
 				CAtlBaseModule::m_bInitFailed = true;
 				break;
 			}
@@ -5380,7 +5478,7 @@ public:
 		_In_ REFIID riid,
 		_COM_Outptr_ void** ppvObj)
 	{
-		ATLASSERT(ppvObj != NULL);
+		DUIASSERT(ppvObj != NULL);
 		if (ppvObj == NULL)
 			return E_POINTER;
 		*ppvObj = NULL;
@@ -5452,7 +5550,7 @@ public:
 		_In_ int nThreads = _MyBase::GetDefaultThreads())
 	{
 		nThreads;
-		ATLASSERT(nThreads == _MyBase::GetDefaultThreads() && _T("Set number of threads through the constructor"));
+		DUIASSERT(nThreads == _MyBase::GetDefaultThreads() && _T("Set number of threads through the constructor"));
 		return CComModule::Init(p, h, plibid);
 	}
 };
@@ -5491,7 +5589,7 @@ public:
 		HRESULT hr = Attach(p);
 
 		if (FAILED(hr))
-			AtlThrow(hr);
+			DuiThrow(hr);
 	}
 	CComGITPtr(_In_ const CComGITPtr& git)
 	{
@@ -5506,18 +5604,18 @@ public:
 				hr = Attach(spT);
 
 			if (FAILED(hr))
-				AtlThrow(hr);
+				DuiThrow(hr);
 		}
 	}
 	explicit CComGITPtr(_In_ DWORD dwCookie) throw()
 	{
-		ATLASSUME(dwCookie != NULL);
+		DUIASSUME(dwCookie != NULL);
 		m_dwCookie = dwCookie;
 
 #ifdef _DEBUG
 		CComPtr<T> spT;
 		HRESULT hr = CopyTo(&spT);
-		ATLASSERT(SUCCEEDED(hr));
+		DUIASSERT(SUCCEEDED(hr));
 #endif
 	}
 
@@ -5564,7 +5662,7 @@ public:
 
 				if (FAILED(hr))
 				{
-					AtlThrow(hr);
+					DuiThrow(hr);
 				}
 			}
 		}
@@ -5574,7 +5672,7 @@ public:
 	{
 		HRESULT hr = Attach(p);
 		if (FAILED(hr))
-			AtlThrow(hr);
+			DuiThrow(hr);
 		return *this;
 	}
 	CComGITPtr& operator=(_In_ DWORD dwCookie)
@@ -5584,7 +5682,7 @@ public:
 			HRESULT hr = Attach(dwCookie);
 			if (FAILED(hr))
 			{
-				AtlThrow(hr);
+				DuiThrow(hr);
 			}
 
 			m_dwCookie = dwCookie;
@@ -5592,7 +5690,7 @@ public:
 #ifdef _DEBUG
 			CComPtr<T> spT;
 			hr = CopyTo(&spT);
-			ATLASSERT(SUCCEEDED(hr));
+			DUIASSERT(SUCCEEDED(hr));
 #endif
 		}
 		return *this;
@@ -5637,8 +5735,8 @@ public:
 			CComPtr<IGlobalInterfaceTable> spGIT;
 			HRESULT hr = E_FAIL;
 			hr = AtlGetGITPtr(&spGIT);
-			ATLASSERT(spGIT != NULL);
-			ATLASSERT(SUCCEEDED(hr));
+			DUIASSERT(spGIT != NULL);
+			DUIASSERT(SUCCEEDED(hr));
 			if (FAILED(hr))
 				return hr;
 
@@ -5657,7 +5755,7 @@ public:
 
 	HRESULT Attach(_In_ DWORD dwCookie) throw()
 	{
-		ATLASSERT(dwCookie != NULL);
+		DUIASSERT(dwCookie != NULL);
 		HRESULT hr = Revoke();
 		if (FAILED(hr))
 			return hr;
@@ -5682,8 +5780,8 @@ public:
 			CComPtr<IGlobalInterfaceTable> spGIT;
 			hr = AtlGetGITPtr(&spGIT);
 
-			ATLASSERT(spGIT != NULL);
-			ATLASSERT(SUCCEEDED(hr));
+			DUIASSERT(spGIT != NULL);
+			DUIASSERT(SUCCEEDED(hr));
 			if (FAILED(hr))
 				return hr;
 
@@ -5701,12 +5799,12 @@ public:
 		HRESULT hr = E_FAIL;
 		hr = AtlGetGITPtr(&spGIT);
 
-		ATLASSERT(spGIT != NULL);
-		ATLASSERT(SUCCEEDED(hr));
+		DUIASSERT(spGIT != NULL);
+		DUIASSERT(SUCCEEDED(hr));
 		if (FAILED(hr))
 			return hr;
 
-		ATLASSUME(m_dwCookie!=NULL);
+		DUIASSUME(m_dwCookie!=NULL);
 		return spGIT->GetInterfaceFromGlobal(m_dwCookie, __uuidof(T), (void**)pp);
 	}
 	DWORD m_dwCookie;
@@ -5769,7 +5867,7 @@ inline HKEY CRegKey::Detach() throw()
 
 inline void CRegKey::Attach(_In_ HKEY hKey) throw()
 {
-	ATLASSUME(m_hKey == NULL);
+	DUIASSUME(m_hKey == NULL);
 	m_hKey = hKey;
 	m_samWOW64 = 0;
 	m_pTM = NULL;
@@ -5777,7 +5875,7 @@ inline void CRegKey::Attach(_In_ HKEY hKey) throw()
 
 inline LSTATUS CRegKey::DeleteSubKey(_In_z_ LPCTSTR lpszSubKey) throw()
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 
 	if (m_pTM != NULL)
 	{
@@ -5818,7 +5916,7 @@ inline LSTATUS CRegKey::DeleteSubKey(_In_z_ LPCTSTR lpszSubKey) throw()
 
 inline LSTATUS CRegKey::DeleteValue(_In_z_ LPCTSTR lpszValue) throw()
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 	return RegDeleteValue(m_hKey, (LPTSTR)lpszValue);
 }
 
@@ -5836,7 +5934,7 @@ inline LSTATUS CRegKey::Close() throw()
 
 inline LSTATUS CRegKey::Flush() throw()
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 
 	return ::RegFlushKey(m_hKey);
 }
@@ -5849,7 +5947,7 @@ inline LSTATUS CRegKey::EnumKey(
 {
 	FILETIME ftLastWriteTime;
 
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 	if (pftLastWriteTime == NULL)
 	{
 		pftLastWriteTime = &ftLastWriteTime;
@@ -5864,8 +5962,8 @@ inline LSTATUS CRegKey::NotifyChangeKeyValue(
 	_In_ HANDLE hEvent,
 	_In_ BOOL bAsync) throw()
 {
-	ATLASSUME(m_hKey != NULL);
-	ATLASSERT((hEvent != NULL) || !bAsync);
+	DUIASSUME(m_hKey != NULL);
+	DUIASSERT((hEvent != NULL) || !bAsync);
 
 	return ::RegNotifyChangeKeyValue(m_hKey, bWatchSubtree, dwNotifyFilter, hEvent, bAsync);
 }
@@ -5879,7 +5977,7 @@ inline LSTATUS CRegKey::Create(
 	_In_opt_ LPSECURITY_ATTRIBUTES lpSecAttr,
 	_Out_opt_ LPDWORD lpdwDisposition) throw()
 {
-	ATLASSERT(hKeyParent != NULL);
+	DUIASSERT(hKeyParent != NULL);
 	DWORD dw;
 	HKEY hKey = NULL;
 	LONG lRes = m_pTM != NULL ?
@@ -5904,7 +6002,7 @@ inline LSTATUS CRegKey::Open(
 	_In_opt_z_ LPCTSTR lpszKeyName,
 	_In_ REGSAM samDesired) throw()
 {
-	ATLASSUME(hKeyParent != NULL);
+	DUIASSUME(hKeyParent != NULL);
 	HKEY hKey = NULL;
 	LONG lRes = m_pTM != NULL ?
 		m_pTM->RegOpenKeyEx(hKeyParent, lpszKeyName, 0, samDesired, &hKey) :
@@ -5912,7 +6010,7 @@ inline LSTATUS CRegKey::Open(
 	if (lRes == ERROR_SUCCESS)
 	{
 		lRes = Close();
-		ATLASSERT(lRes == ERROR_SUCCESS);
+		DUIASSERT(lRes == ERROR_SUCCESS);
 		m_hKey = hKey;
 #if WINVER >= 0x0501
 		m_samWOW64 = samDesired & (KEY_WOW64_32KEY | KEY_WOW64_64KEY);
@@ -5932,8 +6030,8 @@ inline LSTATUS CRegKey::QueryValue(
     LONG lRes = RegQueryValueEx(m_hKey, lpszValueName, NULL, &dwType,
 		(LPBYTE)&dwValue, &dwCount);
     _Analysis_assume_((lRes!=ERROR_SUCCESS) || (dwType == REG_DWORD));
-	ATLASSERT((lRes!=ERROR_SUCCESS) || (dwType == REG_DWORD));
-	ATLASSERT((lRes!=ERROR_SUCCESS) || (dwCount == sizeof(DWORD)));
+	DUIASSERT((lRes!=ERROR_SUCCESS) || (dwType == REG_DWORD));
+	DUIASSERT((lRes!=ERROR_SUCCESS) || (dwCount == sizeof(DWORD)));
 	if (lRes == ERROR_SUCCESS && dwType != REG_DWORD)
 		return ERROR_INVALID_DATA;
 	return lRes;
@@ -5948,7 +6046,7 @@ inline LSTATUS CRegKey::QueryValue(
 	ATLENSURE(pdwCount != NULL);
 	DWORD dwType = 0;
 	LONG lRes = RegQueryValueEx(m_hKey, lpszValueName, NULL, &dwType, (LPBYTE)pszValue, pdwCount);
-	ATLASSERT((lRes!=ERROR_SUCCESS) || (dwType == REG_SZ) ||
+	DUIASSERT((lRes!=ERROR_SUCCESS) || (dwType == REG_SZ) ||
 			 (dwType == REG_MULTI_SZ) || (dwType == REG_EXPAND_SZ));
 	if (lRes == ERROR_SUCCESS && pszValue != NULL)
 	{
@@ -5995,7 +6093,7 @@ inline LSTATUS CRegKey::QueryValue(
 	_Out_opt_ void* pData,
 	_Inout_ ULONG* pnBytes) throw()
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 
 	return( ::RegQueryValueEx(m_hKey, pszValueName, NULL, pdwType, static_cast< LPBYTE >( pData ), pnBytes) );
 }
@@ -6008,7 +6106,7 @@ inline LSTATUS CRegKey::QueryDWORDValue(
 	ULONG nBytes;
 	DWORD dwType;
 
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 
 	nBytes = sizeof(DWORD);
 	lRes = ::RegQueryValueEx(m_hKey, pszValueName, NULL, &dwType, reinterpret_cast<LPBYTE>(&dwValue),
@@ -6028,7 +6126,7 @@ inline LSTATUS CRegKey::QueryQWORDValue(
 	ULONG nBytes;
 	DWORD dwType;
 
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 
 	nBytes = sizeof(ULONGLONG);
 	lRes = ::RegQueryValueEx(m_hKey, pszValueName, NULL, &dwType, reinterpret_cast<LPBYTE>(&qwValue),
@@ -6049,8 +6147,8 @@ inline LONG CRegKey::QueryBinaryValue(
 	LONG lRes;
 	DWORD dwType;
 
-	ATLASSERT(pnBytes != NULL);
-	ATLASSUME(m_hKey != NULL);
+	DUIASSERT(pnBytes != NULL);
+	DUIASSUME(m_hKey != NULL);
 
 	lRes = ::RegQueryValueEx(m_hKey, pszValueName, NULL, &dwType, reinterpret_cast<LPBYTE>(pValue),
 		pnBytes);
@@ -6073,8 +6171,8 @@ inline LSTATUS CRegKey::QueryStringValue(
 	DWORD dwType;
 	ULONG nBytes;
 
-	ATLASSUME(m_hKey != NULL);
-	ATLASSERT(pnChars != NULL);
+	DUIASSUME(m_hKey != NULL);
+	DUIASSERT(pnChars != NULL);
 
 	nBytes = (*pnChars)*sizeof(TCHAR);
 	*pnChars = 0;
@@ -6125,8 +6223,8 @@ inline LSTATUS CRegKey::QueryMultiStringValue(
 	DWORD dwType;
 	ULONG nBytes;
 
-	ATLASSUME(m_hKey != NULL);
-	ATLASSERT(pnChars != NULL);
+	DUIASSUME(m_hKey != NULL);
+	DUIASSERT(pnChars != NULL);
 
 	if (pszValue != NULL && *pnChars < 2)
 		return ERROR_INSUFFICIENT_BUFFER;
@@ -6158,7 +6256,7 @@ inline LSTATUS CRegKey::QueryGUIDValue(
 	ULONG nCount;
 	HRESULT hr;
 
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 
 	guidValue = GUID_NULL;
 
@@ -6191,7 +6289,7 @@ inline LSTATUS WINAPI CRegKey::SetValue(
 	_In_opt_z_ LPCTSTR lpszValue,
 	_In_opt_z_ LPCTSTR lpszValueName)
 {
-	ATLASSERT(lpszValue != NULL);
+	DUIASSERT(lpszValue != NULL);
 	CRegKey key;
 	LONG lRes = key.Create(hKeyParent, lpszKeyName);
 	if (lRes == ERROR_SUCCESS)
@@ -6204,7 +6302,7 @@ inline LSTATUS CRegKey::SetKeyValue(
 	_In_opt_z_ LPCTSTR lpszValue,
 	_In_opt_z_ LPCTSTR lpszValueName) throw()
 {
-	ATLASSERT(lpszValue != NULL);
+	DUIASSERT(lpszValue != NULL);
 	CRegKey key;
 	LONG lRes = key.Create(m_hKey, lpszKeyName, REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE | m_samWOW64);
 	if (lRes == ERROR_SUCCESS)
@@ -6218,7 +6316,7 @@ inline LSTATUS CRegKey::SetValue(
 	_In_ DWORD dwValue,
 	_In_opt_z_ LPCTSTR pszValueName)
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 	return SetDWORDValue(pszValueName, dwValue);
 }
 
@@ -6229,7 +6327,7 @@ inline LSTATUS CRegKey::SetValue(
 	_In_ int nValueLen)
 {
 	ATLENSURE(lpszValue != NULL);
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 
 	if (bMulti && nValueLen == -1)
 		return ERROR_INVALID_PARAMETER;
@@ -6250,7 +6348,7 @@ inline LSTATUS CRegKey::SetValue(
 	_In_opt_ const void* pValue,
 	_In_ ULONG nBytes) throw()
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 	return ::RegSetValueEx(m_hKey, pszValueName, 0, dwType, static_cast<const BYTE*>(pValue), nBytes);
 }
 
@@ -6259,7 +6357,7 @@ inline LSTATUS CRegKey::SetBinaryValue(
 	_In_opt_ const void* pData,
 	_In_ ULONG nBytes) throw()
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 	return ::RegSetValueEx(m_hKey, pszValueName, 0, REG_BINARY, reinterpret_cast<const BYTE*>(pData), nBytes);
 }
 
@@ -6267,7 +6365,7 @@ inline LSTATUS CRegKey::SetDWORDValue(
 	_In_opt_z_ LPCTSTR pszValueName,
 	_In_ DWORD dwValue) throw()
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 	return ::RegSetValueEx(m_hKey, pszValueName, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&dwValue), sizeof(DWORD));
 }
 
@@ -6275,7 +6373,7 @@ inline LSTATUS CRegKey::SetQWORDValue(
 	_In_opt_z_ LPCTSTR pszValueName,
 	_In_ ULONGLONG qwValue) throw()
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 	return ::RegSetValueEx(m_hKey, pszValueName, 0, REG_QWORD, reinterpret_cast<const BYTE*>(&qwValue), sizeof(ULONGLONG));
 }
 
@@ -6284,9 +6382,9 @@ inline LSTATUS CRegKey::SetStringValue(
 	_In_opt_z_ LPCTSTR pszValue,
 	_In_ DWORD dwType) throw()
 {
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 	ATLENSURE_RETURN_VAL(pszValue != NULL, ERROR_INVALID_DATA);
-	ATLASSERT((dwType == REG_SZ) || (dwType == REG_EXPAND_SZ));
+	DUIASSERT((dwType == REG_SZ) || (dwType == REG_EXPAND_SZ));
 
 	return ::RegSetValueEx(m_hKey, pszValueName, 0, dwType, reinterpret_cast<const BYTE*>(pszValue), (static_cast<DWORD>(_tcslen(pszValue))+1)*sizeof(TCHAR));
 }
@@ -6299,7 +6397,7 @@ inline LSTATUS CRegKey::SetMultiStringValue(
 	ULONG nBytes;
 	ULONG nLength;
 
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 	ATLENSURE_RETURN_VAL(pszValue != NULL, ERROR_INVALID_DATA);
 
 	// Find the total length (in bytes) of all of the strings, including the
@@ -6324,7 +6422,7 @@ inline LSTATUS CRegKey::SetGUIDValue(
 {
 	OLECHAR szGUID[64];
 
-	ATLASSUME(m_hKey != NULL);
+	DUIASSUME(m_hKey != NULL);
 
 	ATLENSURE_RETURN_VAL(::StringFromGUID2(guidValue, szGUID, 64), E_INVALIDARG);
 
@@ -6342,8 +6440,8 @@ inline LSTATUS CRegKey::GetKeySecurity(
 	_Out_opt_ PSECURITY_DESCRIPTOR psd,
 	_Inout_ LPDWORD pnBytes) throw()
 {
-	ATLASSUME(m_hKey != NULL);
-	ATLASSUME(pnBytes != NULL);
+	DUIASSUME(m_hKey != NULL);
+	DUIASSUME(pnBytes != NULL);
 
 	return ::RegGetKeySecurity(m_hKey, si, psd, pnBytes);
 }
@@ -6352,8 +6450,8 @@ inline LSTATUS CRegKey::SetKeySecurity(
 	_In_ SECURITY_INFORMATION si,
 	_In_ PSECURITY_DESCRIPTOR psd) throw()
 {
-	ATLASSUME(m_hKey != NULL);
-	ATLASSUME(psd != NULL);
+	DUIASSUME(m_hKey != NULL);
+	DUIASSUME(psd != NULL);
 
 	return ::RegSetKeySecurity(m_hKey, si, psd);
 }
@@ -6588,7 +6686,7 @@ inline HRESULT WINAPI CAtlModule::UpdateRegistryFromResource(
 	{
 		while (pMapEntries->szKey != NULL)
 		{
-			ATLASSUME(NULL != pMapEntries->szData);
+			DUIASSUME(NULL != pMapEntries->szData);
 			ro.AddReplacement(pMapEntries->szKey, pMapEntries->szData);
 			pMapEntries++;
 		}
@@ -6674,7 +6772,7 @@ inline HRESULT WINAPI CAtlModule::UpdateRegistryFromResource(
 	{
 		while (pMapEntries->szKey != NULL)
 		{
-			ATLASSUME(NULL != pMapEntries->szData);
+			DUIASSUME(NULL != pMapEntries->szData);
 			ro.AddReplacement(pMapEntries->szKey, pMapEntries->szData);
 			pMapEntries++;
 		}
@@ -7136,7 +7234,7 @@ ATLINLINE ATLAPI AtlLoadTypeLib(
 	_Outptr_result_z_ BSTR* pbstrPath,
 	_Outptr_ ITypeLib** ppTypeLib)
 {
-	ATLASSERT(pbstrPath != NULL && ppTypeLib != NULL);
+	DUIASSERT(pbstrPath != NULL && ppTypeLib != NULL);
 	if (pbstrPath == NULL || ppTypeLib == NULL)
 		return E_POINTER;
 
@@ -7144,7 +7242,7 @@ ATLINLINE ATLAPI AtlLoadTypeLib(
 	*ppTypeLib = NULL;
 
 	USES_CONVERSION_EX;
-	ATLASSERT(hInstTypeLib != NULL);
+	DUIASSERT(hInstTypeLib != NULL);
 	TCHAR szModule[_ATL_MAX_PATH_PLUS_INDEX];
 
 	DWORD dwFLen = GetModuleFileName(hInstTypeLib, szModule, MAX_PATH);
@@ -7235,7 +7333,7 @@ ATLINLINE ATLAPI AtlRegisterClassCategoriesHelper(
 
    if (InlineIsEqualGUID(clsid, GUID_NULL))
    {
-	  ATLASSERT(0 && _T("Use OBJECT_ENTRY_NON_CREATEABLE_EX macro if you want to register class categories for non creatable objects."));
+	  DUIASSERT(0 && _T("Use OBJECT_ENTRY_NON_CREATEABLE_EX macro if you want to register class categories for non creatable objects."));
 	  return S_OK;
    }
 
@@ -7266,7 +7364,7 @@ ATLINLINE ATLAPI AtlRegisterClassCategoriesHelper(
 		 }
 		 else
 		 {
-			ATLASSERT( pEntry->iType == _ATL_CATMAP_ENTRY_REQUIRED );
+			DUIASSERT( pEntry->iType == _ATL_CATMAP_ENTRY_REQUIRED );
 			hResult = pCatRegister->RegisterClassReqCategories( clsid, 1,
 			   &catid );
 		 }
@@ -7283,7 +7381,7 @@ ATLINLINE ATLAPI AtlRegisterClassCategoriesHelper(
 		 }
 		 else
 		 {
-			ATLASSERT( pEntry->iType == _ATL_CATMAP_ENTRY_REQUIRED );
+			DUIASSERT( pEntry->iType == _ATL_CATMAP_ENTRY_REQUIRED );
 			pCatRegister->UnRegisterClassReqCategories( clsid, 1, &catid );
 		 }
 	  }
@@ -7351,7 +7449,7 @@ ATLINLINE ATLAPI AtlRegisterClassCategoriesHelper(
 
 static inline UINT WINAPI AtlGetDirLen(_In_z_ LPCOLESTR lpszPathName) throw()
 {
-	ATLASSERT(lpszPathName != NULL);
+	DUIASSERT(lpszPathName != NULL);
 	if(lpszPathName == NULL)
 		return 0;
 
@@ -7595,10 +7693,10 @@ ATLINLINE ATLAPIINL AtlComModuleRegisterServer(
 	_In_ BOOL bRegTypeLib,
 	_In_opt_ const CLSID* pCLSID)
 {
-	ATLASSERT(pComModule != NULL);
+	DUIASSERT(pComModule != NULL);
 	if (pComModule == NULL)
 		return E_INVALIDARG;
-	ATLASSERT(pComModule->m_hInstTypeLib != NULL);
+	DUIASSERT(pComModule->m_hInstTypeLib != NULL);
 
 	HRESULT hr = S_OK;
 
@@ -7624,7 +7722,7 @@ ATLINLINE ATLAPIINL AtlComModuleRegisterServer(
 
 	if (SUCCEEDED(hr) && bRegTypeLib)
 	{
-		ATLASSUME(pComModule->m_hInstTypeLib != NULL);
+		DUIASSUME(pComModule->m_hInstTypeLib != NULL);
 		hr = AtlRegisterTypeLib(pComModule->m_hInstTypeLib, 0);
 	}
 
@@ -7639,7 +7737,7 @@ ATLINLINE ATLAPIINL AtlComModuleUnregisterServer(
 	_In_ BOOL bUnRegTypeLib,
 	_In_opt_ const CLSID* pCLSID)
 {
-	ATLASSERT(pComModule != NULL);
+	DUIASSERT(pComModule != NULL);
 	if (pComModule == NULL)
 		return E_INVALIDARG;
 
@@ -7851,12 +7949,12 @@ inline HRESULT CComModule::GetClassObject(
 			{
 				if (pEntry->pCF == NULL)
 				{
-					CComCritSecLock<CComCriticalSection> lock(_AtlComModule.m_csObjMap, false);
+					DComCritSecLock<CComCriticalSection> lock(_AtlComModule.m_csObjMap, false);
 					hr = lock.Lock();
 					if (FAILED(hr))
 					{
 						ATLTRACE(atlTraceCOM, 0, _T("ERROR : Unable to lock critical section in CComModule::GetClassObject\n"));
-						ATLASSERT(FALSE);
+						DUIASSERT(FALSE);
 						break;
 					}
 
@@ -8075,7 +8173,7 @@ ATLINLINE ATLAPI AtlMarshalPtrInProc(
 	_In_ const IID& iid,
 	_Outptr_result_maybenull_ IStream** ppStream)
 {
-	ATLASSERT(ppStream != NULL);
+	DUIASSERT(ppStream != NULL);
 	if (ppStream == NULL)
 		return E_POINTER;
 
@@ -8099,7 +8197,7 @@ ATLINLINE ATLAPI AtlUnmarshalPtr(
 	_In_ const IID& iid,
 	_Outptr_ IUnknown** ppUnk)
 {
-	ATLASSERT(ppUnk != NULL);
+	DUIASSERT(ppUnk != NULL);
 	if (ppUnk == NULL)
 		return E_POINTER;
 
@@ -8131,7 +8229,7 @@ ATLINLINE ATLAPI AtlComModuleGetClassObject(
 
 	*ppv = NULL;
 
-	ATLASSERT(pComModule != NULL);
+	DUIASSERT(pComModule != NULL);
 	if (pComModule == NULL)
 	{
 		return E_INVALIDARG;
@@ -8156,12 +8254,12 @@ ATLINLINE ATLAPI AtlComModuleGetClassObject(
 
 				if (pCache->pCF == NULL)
 				{
-					CComCritSecLock<CComCriticalSection> lock(pComModule->m_csObjMap, false);
+					DComCritSecLock<CComCriticalSection> lock(pComModule->m_csObjMap, false);
 					hr = lock.Lock();
 					if (FAILED(hr))
 					{
 						ATLTRACE(atlTraceCOM, 0, _T("ERROR : Unable to lock critical section in AtlComModuleGetClassObject\n"));
-						ATLASSERT(FALSE);
+						DUIASSERT(FALSE);
 						break;
 					}
 
@@ -8202,7 +8300,7 @@ ATLINLINE ATLAPI AtlComModuleRegisterClassObjects(
 	_In_ DWORD dwClsContext,
 	_In_ DWORD dwFlags)
 {
-	ATLASSERT(pComModule != NULL);
+	DUIASSERT(pComModule != NULL);
 	if (pComModule == NULL)
 		return E_INVALIDARG;
 
@@ -8218,7 +8316,7 @@ ATLINLINE ATLAPI AtlComModuleRegisterClassObjects(
 ATLINLINE ATLAPI AtlComModuleRevokeClassObjects(
 	_Inout_ _ATL_COM_MODULE* pComModule)
 {
-	ATLASSERT(pComModule != NULL);
+	DUIASSERT(pComModule != NULL);
 	if (pComModule == NULL)
 		return E_INVALIDARG;
 
@@ -8287,14 +8385,14 @@ ATLINLINE ATLAPI AtlInternalQueryInterface(
 	_In_ REFIID iid,
 	_COM_Outptr_ void** ppvObject)
 {
-	ATLASSERT(pThis != NULL);
-	ATLASSERT(pEntries!= NULL);
+	DUIASSERT(pThis != NULL);
+	DUIASSERT(pEntries!= NULL);
 
 	if(pThis == NULL || pEntries == NULL)
 		return E_INVALIDARG;
 
 	// First entry in the com map should be a simple map entry
-	ATLASSERT(pEntries->pFunc == _ATL_SIMPLEMAPENTRY);
+	DUIASSERT(pEntries->pFunc == _ATL_SIMPLEMAPENTRY);
 
 	if (ppvObject == NULL)
 		return E_POINTER;
@@ -8322,7 +8420,7 @@ ATLINLINE ATLAPI AtlInternalQueryInterface(
 		{
 			if (pEntries->pFunc == _ATL_SIMPLEMAPENTRY) //offset
 			{
-				ATLASSERT(!bBlind);
+				DUIASSERT(!bBlind);
 				IUnknown* pUnk = (IUnknown*)((INT_PTR)pThis+pEntries->dw);
 				pUnk->AddRef();
 				*ppvObject = pUnk;
@@ -8361,17 +8459,17 @@ ATLINLINE ATLAPI_(void) AtlWinModuleAddCreateWndData(
 	if (pWinModule == NULL)
 		_AtlRaiseException((DWORD)EXCEPTION_ACCESS_VIOLATION);
 
-	ATLASSERT(pData != NULL && pObject != NULL);
+	DUIASSERT(pData != NULL && pObject != NULL);
 	if(pData == NULL || pObject == NULL)
 		_AtlRaiseException((DWORD)EXCEPTION_ACCESS_VIOLATION);
 
 	pData->m_pThis = pObject;
 	pData->m_dwThreadID = ::GetCurrentThreadId();
-	CComCritSecLock<CComCriticalSection> lock(pWinModule->m_csWindowCreate, false);
+	DComCritSecLock<CComCriticalSection> lock(pWinModule->m_csWindowCreate, false);
 	if (FAILED(lock.Lock()))
 	{
 		ATLTRACE(atlTraceWindowing, 0, _T("ERROR : Unable to lock critical section in AtlWinModuleAddCreateWndData\n"));
-		ATLASSERT(0);
+		DUIASSERT(0);
 		return;
 	}
 	pData->m_pNext = pWinModule->m_pCreateWndList;
@@ -8385,11 +8483,11 @@ ATLINLINE ATLAPI_(void*) AtlWinModuleExtractCreateWndData(
 		return NULL;
 
 	void* pv = NULL;
-	CComCritSecLock<CComCriticalSection> lock(pWinModule->m_csWindowCreate, false);
+	DComCritSecLock<CComCriticalSection> lock(pWinModule->m_csWindowCreate, false);
 	if (FAILED(lock.Lock()))
 	{
 		ATLTRACE(atlTraceWindowing, 0, _T("ERROR : Unable to lock critical section in AtlWinModuleExtractCreateWndData\n"));
-		ATLASSERT(0);
+		DUIASSERT(0);
 		return pv;
 	}
 	_AtlCreateWndData* pEntry = pWinModule->m_pCreateWndList;
@@ -8431,7 +8529,7 @@ ATLINLINE ATLAPI AtlWinModuleInit(
 	if (FAILED(hr))
 	{
 		ATLTRACE(atlTraceWindowing, 0, _T("ERROR : Unable to initialize critical section in AtlWinModuleInit\n"));
-		ATLASSERT(0);
+		DUIASSERT(0);
 	}
 	return hr;
 }
@@ -8455,7 +8553,7 @@ ATLINLINE ATLAPI AtlModuleAddTermFunc(
 	{
 		pNew->pFunc = pFunc;
 		pNew->dw = dw;
-		CComCritSecLock<CComCriticalSection> lock(pModule->m_csStaticDataInitAndTypeInfo, false);
+		DComCritSecLock<CComCriticalSection> lock(pModule->m_csStaticDataInitAndTypeInfo, false);
 		hr = lock.Lock();
 		if (SUCCEEDED(hr))
 		{
@@ -8466,7 +8564,7 @@ ATLINLINE ATLAPI AtlModuleAddTermFunc(
 		{
 			delete pNew;
 			ATLTRACE(atlTraceGeneral, 0, _T("ERROR : Unable to lock critical section in AtlModuleAddTermFunc\n"));
-			ATLASSERT(0);
+			DUIASSERT(0);
 		}
 	}
 	return hr;
